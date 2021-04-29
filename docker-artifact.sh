@@ -1,9 +1,16 @@
+#!/usr/bin/env bash
+
 set -e
 
 verbose=1
 image="$1"
 export searchpath="$2"
 export tarfile="$(mktemp)-$image.tar"
+
+# check to see if image exists locally
+if ! docker image inspect "$image" > /dev/null ; then
+	exit 1
+fi
 
 # Save image tar to temp file
 [ $verbose ] && >&2 echo "Exporting image '$image' to temp file '$tarfile'..."
@@ -30,19 +37,27 @@ export idmap=$(echo "$manifest" "$config" | jq -sr '[ [ .[0][0].Layers, .[1].roo
 [ $verbose ] && >&2 echo "Searching layers for '$searchpath'..."
 found=$(echo "$manifest" | jq '.[0].Layers[]' | xargs -I {} sh -c 'digest=$(echo "$idmap" | jq -r ".[\"{}\"]"); tar -f "$tarfile" -x {} -O | tar -t | sed s_^_/_ | grep -wx "$searchpath" | xargs -I [] echo "[]=$digest"')
 
+foundcount=$(echo "$found" | grep -c . || true)
+
 # If more than one is found, then bail
-if [ $(echo "$found" | wc -l) -gt 1 ]; then
-	>&2 echo "Multiple matches found, aborting:"
+if [ $foundcount -gt 1 ]; then
+	>&2 echo "File was changed in multiple layers, aborting. Found files and layer ids:"
 	>&2 echo "$found"
 	exit 2
+elif [ $foundcount -eq 0 ]; then
+	>&2 echo "No files found matching '$searchpath'"
+	exit 3
 fi
 
-# print out labels to add during image rebuild
 labels=$(echo "$found" | sed 's_^.*$_--label "\0"_' | paste -d' ')
 
-echo "$labels"
+# Add a layer to the existing image to add the labels and tag the new image with the same image name
+[ $verbose ] && >&2 echo "Rebuilding image and adding labels: $labels"
+echo "FROM $image" | eval docker build $labels -t "$image" - &> /dev/null
 
+echo "Rebuilt image '$image' with the following added labels:"
+docker image inspect "$image" | jq '.[0].Config.Labels'
+echo "Run 'docker push $image' to push it to docker hub"
 
-[ $verbose ] && >&2 echo "Done!"
 exit
 
