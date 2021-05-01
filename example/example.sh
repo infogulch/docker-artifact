@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-set -e
 
-source=$(dirname "${BASH_SOURCE[0]}")
-pushd "$source" &> /dev/null
+pushd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null
 
 # Build example image
 echo "Rebuilding docker image for example"
-docker build . -t infogulch/test-image &> /dev/null
+printf 'FROM busybox \n RUN mkdir app && echo "Hello World!" > /app/testfile.txt' | docker build -t infogulch/artifact-test - &> /dev/null
 
-# Execute docker artifact to add a label to /app/othertestfile.txt
-set +e
-../docker-artifact.sh artifact label infogulch/test-image /app/othertestfile.txt
+# Execute docker artifact to add a label that identifies /app/testfile.txt
+../docker-artifact.sh artifact label infogulch/artifact-test /app/testfile.txt
 
 popd &> /dev/null
 

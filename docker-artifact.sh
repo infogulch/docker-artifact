@@ -122,8 +122,8 @@ function label {
 	LOG "All image labels:"$'\n'"$(docker image inspect "$image" | jq '.[0].Config.Labels' | sed 's_^_     _' )"
 
 	# Remind user to push image
-	echo " [*] Rebuilt image '$image' to add $foundcount labels"
-	echo " [*] Run 'docker push $image' to push it to your container repository"
+	echo " ** Rebuilt image '$image' to add $foundcount labels"
+	echo " ** Run 'docker push $image' to push it to your container repository"
 }
 
 function delete_files {
@@ -133,7 +133,7 @@ function delete_files {
 
 export verbose=1
 function LOG {
-	[ $verbose ] && >&2 echo -e "$(tput setaf 4) ==> $@$(tput sgr0)"
+	[ $verbose ] && >&2 echo -e "$(tput setaf 4) => $@$(tput sgr0)"
 }
 
 # Export functions used in subshells

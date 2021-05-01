@@ -52,13 +52,14 @@ Options
 > See the `example/` directory for a complete working example, summarized below:
 
 ```
-> printf 'FROM busybox \n RUN mkdir app && echo "Hello World!" > /app/testfile.txt' | docker build -t infogulch/test-image -
-...
-> docker artifact label infogulch/test-image /app/testfile.txt
-Successfully added labels to 'infogulch/test-image':
-{
-  "/app/testfile.txt": "sha256:..."
-}
+> printf 'FROM busybox \n RUN mkdir app && echo "Hello World!" > /app/testfile.txt' | docker build -t infogulch/artifact-test -
+ => [internal] load build definition from Dockerfile
+ ...
+ => => writing image sha256:bc8ff9e88a0908f50f3c39b640a2f5a39f6cb5b7bce60510673d5da4f3e6e704
+ => => naming to docker.io/infogulch/artifact-test
+> docker artifact label infogulch/artifact-test /app/testfile.txt
+ ** Rebuilt image 'infogulch/artifact-test' to add 1 labels
+ ** Run 'docker push infogulch/artifact-test' to push it to your container repository
 > docker push infogulch/test-image
 ...
 > docker artifact download infogulch/test-image /app/testfile.txt
