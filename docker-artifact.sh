@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -e
 
 function docker_cli_plugin_metadata {
@@ -40,22 +39,14 @@ Examples:
 function main {
 	case "$1" in
 		docker-cli-plugin-metadata)
-			docker_cli_plugin_metadata 
+			docker_cli_plugin_metadata
 			;;
 		artifact)
 			case "$2" in
-				ls|list)
-					list "${@:3}"
-					;;
-				label)
-					label "${@:3}"
-					;;
-				download)
-					download "${@:3}"
-					;;
-				*)
-					echo "$__usage"
-					;;
+				ls|list)  list "${@:3}" ;;
+				label)    label "${@:3}" ;;
+				download) download "${@:3}" ;;
+				*)        echo "$__usage" ;;
 			esac
 			;;
 	esac
@@ -68,28 +59,38 @@ function list {
 }
 
 function list_json {
+	{ read -r registry; read -r repo; read -r tag; } <<< "$(image_parts "$1")"
+	local token="$(get_token "$registry" "$repo")"
+	LOG "Querying manifest to extract labels for '$registry/$repo:$tag"
+	local manifest="$(curl --silent \
+		-H "Accept:application/vnd.docker.container.image.v1+json" \
+		-H "Authorization: Bearer $token" \
+		"https://$registry/v2/$repo/manifests/$tag")"
+	# >&2 jq <<< "$manifest"
+	local labels="$(jq -r '.history[].v1Compatibility' <<< "$manifest" | jq --slurp '[.[].config | select(.Labels != null) | .Labels] | add')"
+	jq <<< "$labels"
+}
+
+function image_parts {
 	local image="$1"
 	local regex='^([-_a-z\.]+)/([-_a-z]+)(:([-_a-z]+))?$'
 	if [[ $image =~ $regex ]] ; then
-		registry="${BASH_REMATCH[1]}"
-		image="${BASH_REMATCH[2]}"
-		tag="${BASH_REMATCH[4]:-latest}"
+		local registry="${BASH_REMATCH[1]}"
+		local repo="${BASH_REMATCH[2]}"
+		local tag="${BASH_REMATCH[4]:-latest}"
+		# if no . in registry part, then it must be an image from docker hub; translate appropriately
 		if ! [[ $registry =~ \. ]] ; then
-			image="$registry/$image"
+			repo="$registry/$repo"
 			registry="registry-1.docker.io"
 		fi
 	else
 		echo "Failed to parse image '$image'"
 		exit 1
 	fi
-	local token="$(get_token "$registry" "$image")"
-	LOG "Querying manifest to extract labels for '$registry/$image:$tag"
-	local manifest="$(curl --silent \
-		-H "Accept:application/vnd.docker.container.image.v1+json" \
-		-H "Authorization: Bearer $token" \
-		"https://$registry/v2/$image/manifests/$tag")"
-	local labels="$(jq -r '.history[].v1Compatibility' <<< "$manifest" | jq --slurp -r '[.[].config | select(.Labels != null) | .Labels] | add')"
-	jq <<< "$labels"
+	# >&2 echo "$image => $registry - $repo - $tag" #debug
+	echo "$registry"
+	echo "$repo"
+	echo "$tag"
 }
 
 function get_token {
@@ -184,14 +185,17 @@ function delete_files {
 	rm "$@"
 }
 
-export verbose=1
 function LOG {
 	[ $verbose ] && >&2 echo -e "$(tput setaf 4) => $@$(tput sgr0)"
 }
 
-# Export functions used in subshells
-export -f LOG
-export -f _search_layer
+# run in subshell to allow sourcing this file while not stomping on parents' namespace 
+(
+	# Exports used in subshells
+	export verbose=1
+	export -f LOG
+	export -f _search_layer
 
-main "$@"
+	main "$@"
+)
 
