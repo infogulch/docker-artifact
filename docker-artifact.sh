@@ -53,28 +53,29 @@ function main {
 }
 
 function list {
-	local list="$(list_json "$@" | jq -r 'keys | .[]' | sed 's_^_   _')"
+	local registry repo tag token list
+	{ read -r registry; read -r repo; read -r tag; } <<< "$(image_parts "$1")"
+	token="$(get_token "$registry" "$repo")"
+	list="$(list_json "$registry" "$repo" "$tag" "$token")"
 	echo " ** The following files are available to download from $1: "
-	echo "$list"
+	echo "$(jq -r 'keys | .[]' <<< "$list" | sed 's_^_   _')"
 }
 
 function list_json {
-	{ read -r registry; read -r repo; read -r tag; } <<< "$(image_parts "$1")"
-	local token="$(get_token "$registry" "$repo")"
+	local registry="$1" repo="$2" tag="$3" token="$4" manifest labels
 	LOG "Querying manifest to extract labels for '$registry/$repo:$tag"
-	local manifest="$(curl --silent \
+	manifest="$(curl --silent \
 		-H "Accept:application/vnd.docker.container.image.v1+json" \
 		-H "Authorization: Bearer $token" \
 		"https://$registry/v2/$repo/manifests/$tag")"
 	# >&2 jq <<< "$manifest"
-	local labels="$(jq -r '.history[].v1Compatibility' <<< "$manifest" | jq --slurp '[.[].config | select(.Labels != null) | .Labels] | add')"
+	labels="$(jq -r '.history[].v1Compatibility' <<< "$manifest" | jq --slurp '[.[].config | select(.Labels != null) | .Labels] | add')"
 	jq <<< "$labels"
 }
 
 function image_parts {
-	local image="$1"
-	local regex='^([-_a-z\.]+)/([-_a-z]+)(:([-_a-z]+))?$'
-	if [[ $image =~ $regex ]] ; then
+	local image="$1" regex='^([-_a-z\.]+)/([-_a-z]+)(:([-_a-z]+))?$'
+	if [[ "$image" =~ $regex ]] ; then
 		local registry="${BASH_REMATCH[1]}"
 		local repo="${BASH_REMATCH[2]}"
 		local tag="${BASH_REMATCH[4]:-latest}"
@@ -94,8 +95,7 @@ function image_parts {
 }
 
 function get_token {
-	local registry="$1"
-	local image="$2"
+	local registry="$1" image="$2"
 	if [[ ! -z "$REGISTRY_TOKEN" ]] ; then
 		echo "$REGISTRY_TOKEN"
 		return
@@ -112,13 +112,12 @@ function get_token {
 		*.dkr.ecr.*.amazonaws.com)
 			aws ecr get-authorization-token | jq -r '.authorizationData[0].authorizationToken'
 			;;
+
 	esac
 }
 
 function label {
-	local image="$1"
-	local searchpath="$2"
-	local tarfile="$(mktemp).tar"
+	local image="$1" searchpath="$2" tarfile="$(mktemp).tar"
 
 	# check to see if image exists locally. If not, Docker already prints an error so just exit
 	if ! docker image inspect "$image" > /dev/null ; then
@@ -170,14 +169,11 @@ function label {
 }
 
 function _search_layer {
-	local idmap="$1"
-	local imagetar="$2"
-	local layertar="$3"
-	local search="$4"
+	local idmap="$1" imagetar="$2" layertar="$3" search="$4"
 	# look up digest associated with layer path
 	local digest="$(jq --arg key "$layertar" -r '.[$key]' <<< "$idmap")"
 	# extract layer from image | list files in layer | add / prefix | search for file | append =$digest to each found file
-	tar -f "$imagetar" -x "$layertar" -O | tar -t | sed s_^_/_ | grep -wx "$search" | sed 's_.$_\0='"$digest"'_'
+	tar -f "$imagetar" -x "$layertar" -O | tar -t | sed s_^_/_ | grep -wxF "$search" | sed 's_.$_\0='"$digest"'_'
 }
 
 function delete_files {
@@ -189,7 +185,7 @@ function LOG {
 	[ $verbose ] && >&2 echo -e "$(tput setaf 4) => $@$(tput sgr0)"
 }
 
-# run in subshell to allow sourcing this file while not stomping on parents' namespace 
+# run in subshell to allow sourcing this file without stomping on parents' namespace
 (
 	# Exports used in subshells
 	export verbose=1
