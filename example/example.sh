@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
+set -e
 
 pushd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null
 
 # Build example image
-echo "Rebuilding docker image infogulch/artifact-test"
-printf 'FROM busybox \n RUN mkdir app && echo "Hello World!" > /app/testfile.txt' | docker build -t infogulch/artifact-test -
+>&2 printf "Rebuilding docker image infogulch/artifact-test\n"
+printf 'FROM busybox \n RUN mkdir app && echo "Test data" > /app/testfile.txt && echo "Hello world!" > /hello.txt' | docker build -t infogulch/artifact-test -
 
-# Execute docker artifact to add a label that identifies /app/testfile.txt
-echo ""
-echo "Labeling /app/testfile.txt in infogulch/artifact-test"
-../docker-artifact.sh artifact label infogulch/artifact-test /app/testfile.txt
+>&2 printf "\nLabeling /app/testfile.txt and /hello.txt in infogulch/artifact-test\n"
+../docker-artifact.sh artifact label infogulch/artifact-test /app/testfile.txt /hello.txt
 
-echo ""
-echo "Pushing image infogulch/artifact-test"
+>&2 printf "\nPushing image infogulch/artifact-test\n"
 docker push infogulch/artifact-test
 
-echo ""
-echo "Listing files in infogulch/artifact-test"
+>&2 printf "\nListing files in infogulch/artifact-test\n"
 ../docker-artifact.sh artifact ls infogulch/artifact-test
+
+>&2 printf "\nAttempt to download missing file /oops.txt\n"
+! ../docker-artifact.sh artifact download infogulch/artifact-test /oops.txt
+
+>&2 printf "\nDownloading /hello.txt and /app/testfile.txt\n"
+../docker-artifact.sh artifact download infogulch/artifact-test /hello.txt /app/testfile.txt
 
 popd &> /dev/null
 

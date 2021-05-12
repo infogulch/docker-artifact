@@ -52,6 +52,30 @@ function main {
 	esac
 }
 
+function download {
+	local image="$1" files=("${@:2}") registry repo tag token labels
+	{ read -r registry; read -r repo; read -r tag; } <<< "$(image_parts "$1")"
+	token="$(get_token "$registry" "$repo")"
+	labels="$(list_json "$registry" "$repo" "$tag" "$token")"
+	# safely convert bash array of args into json array
+	files="$(for i in "${files[@]}"; do jq -n --arg f "$i" '$f'; done | jq -s '.')"
+	# test if all of the requested files are present in manifest labels
+	if ! jq -e --argjson f "$files" 'keys|contains($f)' <<< "$labels" > /dev/null ; then
+		echo " ** These files are not avilable to download from $image:"
+		echo "$(jq -r --argjson f "$files" '$f - keys | .[]' <<< "$labels" | sed 's_^_    _')"
+		exit 1
+	fi
+	# filter labels to just the ones that match files
+	labels="$(jq --argjson f "$files" 'with_entries(select(. as $e | $f | index($e.key)))' <<< "$labels")"
+	local shas="$(jq -r 'to_entries | map({(.value): {(.key): null}}) | reduce .[] as $i {{}; . * $i) | to_entries | map({key:.key, value:(.value|keys)}' <<< "$labels")"
+	echo "$shas"
+	#local a="$(xargs -L1 -I {} bash -c \
+		#'curl -s -L -H "Authorization: Bearer $1" "$2/$3" | tar -xz -O "$3"' \
+		#_ "$token" "https://$registry/v2/$repo/blobs/" {} \
+		#<<< "$shas")"
+	echo "Done!"
+}
+
 function list {
 	local registry repo tag token list
 	{ read -r registry; read -r repo; read -r tag; } <<< "$(image_parts "$1")"
@@ -112,7 +136,6 @@ function get_token {
 		*.dkr.ecr.*.amazonaws.com)
 			aws ecr get-authorization-token | jq -r '.authorizationData[0].authorizationToken'
 			;;
-
 	esac
 }
 
